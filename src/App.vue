@@ -5,8 +5,9 @@
       v-model:value="filterValue"
       :fields="fields"
       :initial-operator="'AND'"
-      @apply="handleApplyFilters"
+      @update="handleFilterUpdate"
     />
+    <pre>{{ JSON.stringify(filterValue, null, 2) }}</pre>
   </div>
 </template>
 
@@ -30,8 +31,28 @@ const filterValue = ref<FilterGroup>({
   children: []
 });
 
-const handleApplyFilters = (filters: FilterGroup) => {
-  console.log('Applied filters:', filters);
+const handleFilterUpdate = (filter: FilterGroup) => {
+  console.log('Received filter update:', filter);
+  if (filter.children) {
+    filterValue.value = {
+      operator: filter.operator || 'AND',
+      conditions: [],
+      groups: [],
+      children: filter.children.map(child => {
+        if ('field' in child) {
+          return {
+            ...child,
+            type: 'condition'
+          };
+        }
+        return {
+          ...child,
+          type: 'group'
+        };
+      })
+    };
+  }
+  console.log('Updated filterValue:', filterValue.value);
 };
 </script>
 

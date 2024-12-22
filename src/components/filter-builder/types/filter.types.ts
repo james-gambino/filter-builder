@@ -47,9 +47,10 @@ export interface IFilterComponent {
   field?: string;
   value?: any;
   type?: 'condition' | 'group';
-  accept(visitor: IFilterVisitor): void;
-  clone(): IFilterComponent;
-  toJSON(): any;
+  children?: IFilterComponent[];
+  accept: (visitor: IFilterVisitor) => void;
+  clone: () => IFilterComponent;
+  toJSON: () => any;
 }
 
 // Composite interface

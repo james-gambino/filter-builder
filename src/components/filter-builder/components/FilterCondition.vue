@@ -28,6 +28,10 @@ export default defineComponent({
     fields: {
       type: Array as () => FilterField[],
       required: true
+    },
+    index: {
+      type: Number,
+      required: true
     }
   },
   emits: ['update', 'remove'],
@@ -46,12 +50,12 @@ export default defineComponent({
 
     const updateValue = () => {
       emit('update', {
+        id: props.id,
         type: 'condition',
         field: field.value,
         operator: operator.value,
-        value: value.value,
-        id: props.id
-      });
+        value: value.value
+      }, props.index);
     };
 
     // Initial update to set default values

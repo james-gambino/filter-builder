@@ -26,7 +26,8 @@
             <FilterCondition
               :id="child.id"
               :fields="fields"
-              @update="handleChildUpdate"
+              :index="index"
+              @update="(value) => handleChildUpdate(value, index)"
               @remove="() => removeChild(index)"
             />
           </template>
@@ -34,8 +35,9 @@
             <FilterGroupComposite
               :id="child.id"
               :fields="fields"
+              :index="index"
               :initial-operator="child.operator as 'AND' | 'OR'"
-              @update="handleChildUpdate"
+              @update="(value) => handleChildUpdate(value, index)"
               @remove="() => removeChild(index)"
             />
           </template>
@@ -75,6 +77,10 @@ export default defineComponent({
     showRemoveButton: {
       type: Boolean,
       default: true
+    },
+    index: {
+      type: Number,
+      default: undefined
     }
   },
   emits: ['update', 'remove'],
@@ -88,12 +94,54 @@ export default defineComponent({
       { value: 'OR', label: 'OR' }
     ];
 
+    const addChild = (component: IFilterComponent) => {
+      console.log('Adding child:', component);
+      
+      // Создаем компонент с правильным методом toJSON
+      const newComponent = {
+        ...component,
+        type: component.type,
+        toJSON: () => {
+          const base = {
+            id: component.id,
+            type: component.type
+          };
+
+          if (component.type === 'condition') {
+            return {
+              ...base,
+              field: component.field || '',
+              operator: component.operator || '=',
+              value: component.value || ''
+            };
+          } else {
+            return {
+              ...base,
+              operator: component.operator || 'AND',
+              children: component.children || []
+            };
+          }
+        }
+      };
+
+      children.value.push(newComponent);
+      
+      // Эмитим обновление с актуальным состоянием
+      emit('update', {
+        type: 'group',
+        operator: localOperator.value,
+        children: children.value.map(child => child.toJSON())
+      });
+    };
+
     const addCondition = () => {
       const conditionId = `condition-${Date.now()}`;
-      console.log(`conditionId`)
       const newCondition: IFilterComponent = {
         id: conditionId,
+        type: 'condition',
+        field: '',
         operator: '=',
+        value: '',
         accept(visitor: IFilterVisitor) {
           visitor.visitCondition({
             field: '',
@@ -106,16 +154,16 @@ export default defineComponent({
         },
         toJSON() {
           return {
+            id: this.id,
             type: 'condition',
-            field: '',
-            operator: '=',
-            value: ''
+            field: this.field,
+            operator: this.operator,
+            value: this.value
           };
         }
       };
 
-      children.value.push(newCondition);
-      emit('update');
+      addChild(newCondition);
       showAddMenu.value = false;
     };
 
@@ -135,6 +183,7 @@ export default defineComponent({
         },
         toJSON() {
           return {
+            id: this.id,
             type: 'group',
             operator: 'AND' as const,
             children: []
@@ -142,19 +191,32 @@ export default defineComponent({
         }
       };
 
-      children.value.push(newGroup);
-      emit('update');
+      addChild(newGroup);
       showAddMenu.value = false;
-    };
-
-    const addChild = (component: IFilterComponent) => {
-      children.value.push(component);
-      emit('update');
     };
 
     const removeChild = (index: number) => {
       children.value.splice(index, 1);
-      emit('update');
+      emit('update', {
+        type: 'group',
+        operator: localOperator.value,
+        children: children.value.map(child => {
+          if (child.toJSON().type === 'condition') {
+            return {
+              ...child.toJSON(),
+              id: child.id,
+              type: 'condition'
+            };
+          } else {
+            return {
+              ...child.toJSON(),
+              id: child.id,
+              type: 'group',
+              children: child.toJSON().children || []
+            };
+          }
+        })
+      });
     };
 
     const getChildren = (): IFilterComponent[] => {
@@ -166,32 +228,56 @@ export default defineComponent({
     };
 
     const updateOperator = () => {
-      emit('update');
+      const updatedGroup = {
+        type: 'group',
+        operator: localOperator.value,
+        children: children.value.map(child => {
+          const json = child.toJSON();
+          return {
+            ...json,
+            id: child.id,
+            type: json.type || (json.field ? 'condition' : 'group')
+          };
+        })
+      };
+      emit('update', updatedGroup);
     };
 
     const handleChildUpdate = (value: any, index: number) => {
-      if (!value || index < 0 || index >= children.value.length) return;
+      console.log('Child update:', value, 'at index:', index);
       
-      const child = children.value[index];
-      if (!child) return;
-
-      if (value.type === 'condition') {
-        Object.assign(child, {
-          ...child,
-          field: value.field || '',
-          operator: value.operator || '=',
-          value: value.value || '',
-          type: 'condition'
-        });
-      } else {
-        Object.assign(child, {
-          ...child,
-          operator: value.operator || 'AND',
-          children: value.children || [],
-          type: 'group'
-        });
+      if (index === undefined || index < 0 || index >= children.value.length) {
+        console.error('Invalid index in handleChildUpdate:', index);
+        return;
       }
-      emit('update');
+      
+      // Обновляем состояние дочернего компонента
+      children.value[index] = {
+        ...children.value[index],
+        ...value,
+        toJSON: () => ({
+          id: value.id,
+          type: value.type,
+          ...(value.type === 'condition' 
+            ? {
+                field: value.field || '',
+                operator: value.operator || '=',
+                value: value.value || ''
+              }
+            : {
+                operator: value.operator || 'AND',
+                children: value.children || []
+              }
+          )
+        })
+      };
+      
+      // Эмитим обновление с актуальным состоянием
+      emit('update', {
+        type: 'group',
+        operator: localOperator.value,
+        children: children.value.map(child => child.toJSON())
+      }, props.index);
     };
 
     const accept = (visitor: IFilterVisitor) => {
@@ -218,12 +304,30 @@ export default defineComponent({
     };
 
     const toJSON = () => {
-      return {
+      const json = {
         id: props.id,
         type: 'group',
         operator: localOperator.value,
-        children: children.value.map(child => child.toJSON())
+        children: children.value.map(child => {
+          const childJson = child.toJSON();
+          if (childJson.type === 'condition') {
+            return {
+              ...childJson,
+              id: child.id,
+              type: 'condition'
+            };
+          } else {
+            return {
+              ...childJson,
+              id: child.id,
+              type: 'group',
+              children: childJson.children || []
+            };
+          }
+        })
       };
+      console.log('Group toJSON:', json);
+      return json;
     };
 
     return {
